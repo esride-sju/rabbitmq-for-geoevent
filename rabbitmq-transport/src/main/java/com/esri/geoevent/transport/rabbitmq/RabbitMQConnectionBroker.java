@@ -265,17 +265,23 @@ public class RabbitMQConnectionBroker extends RabbitMQObservable implements Obse
 
     protected synchronized void connect() throws RabbitMQTransportException
     {
+      LOGGER.info("Connecting..");
       disconnect(null);
       if (broker.isConnected())
       {
-        if (channel == null)
+    	LOGGER.info("Broker is connected");
+    	if (channel == null) {
+          LOGGER.info("Create Channel...");
           channel = broker.createChannel();
+          LOGGER.info("Channel Created: " + channel.getChannelNumber());
+        }
         init();
         details = "";
         connected = true;
       }
       else
       {
+    	LOGGER.info("Broker is NOT connected");
         details = LOGGER.translate("CONNECTION_BROKEN_ERROR", broker.monitor.connectionInfo.getHost());
         LOGGER.error(details);
         throw new RabbitMQTransportException(details);
@@ -284,6 +290,7 @@ public class RabbitMQConnectionBroker extends RabbitMQObservable implements Obse
 
     protected synchronized void disconnect(String reason)
     {
+      LOGGER.info("Disconnect.. : + " + reason);
       if (connected)
       {
         if (channel != null)

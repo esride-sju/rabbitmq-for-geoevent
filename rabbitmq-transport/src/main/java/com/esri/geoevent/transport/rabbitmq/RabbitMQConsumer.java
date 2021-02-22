@@ -82,12 +82,23 @@ public class RabbitMQConsumer extends RabbitMQConnectionBroker.RabbitMQComponent
     RabbitMQQueueingConsumer.Delivery delivery = null;
     try
     {
+      LOGGER.trace("Receive next delivery");
       delivery = consumer.nextDelivery(100);
+      LOGGER.trace("Returned next delivery");
     }
     catch (Exception e)
     {
       // ignore
+      LOGGER.error("Exception in receiving data", e);
     }
+    
+    if (delivery != null)  {
+    	LOGGER.info("Consumer delivers " + delivery.getBody().length + " bytes.");
+    	LOGGER.info("Body: " + new String(delivery.getBody()));
+    } else {
+    	LOGGER.info("Consumer.nextDelivery > queue.poll returns null");
+    }          
+    
     return (delivery != null) ? delivery.getBody() : null;
   }
 
