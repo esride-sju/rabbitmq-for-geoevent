@@ -30,8 +30,10 @@ import com.esri.ges.core.component.RunningState;
 import com.esri.ges.core.validation.ValidationException;
 import com.esri.ges.framework.i18n.BundleLogger;
 import com.esri.ges.framework.i18n.BundleLoggerFactory;
+import com.esri.ges.manager.datastore.folder.FolderDataStoreManager;
 import com.esri.ges.transport.OutboundTransportBase;
 import com.esri.ges.transport.TransportDefinition;
+import com.esri.ges.util.Converter;
 
 import java.nio.ByteBuffer;
 import java.util.Observable;
@@ -44,9 +46,12 @@ public class RabbitMQOutboundTransport extends OutboundTransportBase implements 
   private RabbitMQExchange          exchange;
   private RabbitMQProducer          producer;
 
-  public RabbitMQOutboundTransport(TransportDefinition definition) throws ComponentException
+  private FolderDataStoreManager folderDataStoreManager;
+  
+  public RabbitMQOutboundTransport(TransportDefinition definition, FolderDataStoreManager folderDataStoreManager) throws ComponentException
   {
     super(definition);
+    this.folderDataStoreManager = folderDataStoreManager;
   }
 
   @Override
@@ -104,9 +109,13 @@ public class RabbitMQOutboundTransport extends OutboundTransportBase implements 
     if (virtualHost == null || virtualHost.trim().isEmpty())
       virtualHost = "/";
     String username = getProperty("username").getValueAsString();
-    String ssl = getProperty("ssl").getValueAsString();
-    connectionInfo = new RabbitMQConnectionInfo(host, port, virtualHost, username, password, ssl);
-
+    boolean ssl = Converter.convertToBoolean(getProperty("ssl").getValueAsString(), false);
+    
+    // TODO Full Implementation (check InputTransport)    
+    connectionInfo = new RabbitMQConnectionInfo(host, port, virtualHost, ssl);
+    connectionInfo.setUsername(username);
+    connectionInfo.setPassword(password);
+        
     String exchangeName = getProperty("exchangeName").getValueAsString();
     String exchangeType = getProperty("exchangeType").getValueAsString();
     String exchangeDurability = getProperty("exchangeDurability").getValueAsString();

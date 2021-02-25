@@ -27,13 +27,18 @@ package com.esri.geoevent.transport.rabbitmq;
 import com.esri.ges.core.component.ComponentException;
 import com.esri.ges.core.component.RunningException;
 import com.esri.ges.core.component.RunningState;
+import com.esri.ges.core.property.PropertyDefinition;
+import com.esri.ges.core.property.PropertyType;
 import com.esri.ges.core.validation.ValidationException;
 import com.esri.ges.framework.i18n.BundleLogger;
 import com.esri.ges.framework.i18n.BundleLoggerFactory;
+import com.esri.ges.manager.datastore.folder.FolderDataStoreManager;
 import com.esri.ges.transport.InboundTransportBase;
 import com.esri.ges.transport.TransportDefinition;
 import com.esri.ges.util.Converter;
+import com.esri.ges.util.Validator;
 
+import java.io.File;
 import java.nio.ByteBuffer;
 import java.util.Observable;
 import java.util.Observer;
@@ -46,10 +51,13 @@ public class RabbitMQInboundTransport extends InboundTransportBase implements Ru
   private RabbitMQQueue             queue;
   private int                       prefetchCount;
   private RabbitMQConsumer          consumer;
+  
+  private FolderDataStoreManager folderDataStoreManager;
 
-  public RabbitMQInboundTransport(TransportDefinition definition) throws ComponentException
+  public RabbitMQInboundTransport(TransportDefinition definition, FolderDataStoreManager folderDataStoreManager) throws ComponentException
   {
     super(definition);
+    this.folderDataStoreManager = folderDataStoreManager;
   }
 
   public boolean isClusterable()
@@ -108,25 +116,57 @@ public class RabbitMQInboundTransport extends InboundTransportBase implements Ru
   public void afterPropertiesSet()
   {
     shutdownConsumer();
-    String password;
-    try
-    {
-      password = getProperty("password").getDecryptedValue();
-    }
-    catch (Exception e)
-    {
-      password = getProperty("password").getValueAsString();
-    }
-
+    
     String host = getProperty("host").getValueAsString();
     String port = getProperty("port").getValueAsString();
     String virtualHost = getProperty("virtualHost").getValueAsString();
-    if (virtualHost == null || virtualHost.trim().isEmpty())
+   
+    if (virtualHost == null || virtualHost.trim().isEmpty()) {
       virtualHost = "/";
-    String username = getProperty("username").getValueAsString();
-    String ssl = getProperty("ssl").getValueAsString();
-    connectionInfo = new RabbitMQConnectionInfo(host, port, virtualHost, username, password, ssl);
-
+    }
+    
+    boolean ssl = Converter.convertToBoolean(getProperty("ssl").getValueAsString(), false);
+    
+    connectionInfo = new RabbitMQConnectionInfo(host, port, virtualHost, ssl);
+        
+    if (ssl) {
+    	
+    	boolean useProvidedServerCert = Converter.convertToBoolean(getProperty("useProvidedServerCert").getValueAsString(), false);
+    	
+    	connectionInfo.setUseProvidedServerCert(useProvidedServerCert);
+    	
+    	if (useProvidedServerCert) {    		
+    		 String serverCertFileLocation = getProperty("serverCertFileLocation").getValueAsString();
+             String serverCertFilename = getProperty("serverCertFilename").getValueAsString();        
+             String serverCert = this.folderDataStoreManager.getFolderDataStore(serverCertFileLocation).getPath().getAbsolutePath() + File.separator + serverCertFilename;    		
+             connectionInfo.setServerCert(serverCert);
+    	}
+    }
+    	
+    RabbitMQAuthenticationType authenticationType = Validator.valueOfIgnoreCase(RabbitMQAuthenticationType.class, getProperty("authenticationType").getValueAsString(), RabbitMQAuthenticationType.userpass);
+    
+    connectionInfo.setAuthenticationType(authenticationType);
+         
+    try {
+    	 switch(authenticationType) {
+    	    
+     	case certificate:
+     		String clientCertFileLocation = getProperty("clientCertFileLocation").getValueAsString();
+             String clientCertFilename = getProperty("clientCertFilename").getValueAsString();                        
+             connectionInfo.setClientCert(this.folderDataStoreManager.getFolderDataStore(clientCertFileLocation).getPath().getAbsolutePath() + File.separator + clientCertFilename);
+             connectionInfo.setClientCertPassword(getProperty("clientCertPassword").getDecryptedValue());
+      		
+     		break;
+     	case userpass:
+     	default:
+     		connectionInfo.setUsername(getProperty("username").getValueAsString());
+     	    connectionInfo.setPassword(getProperty("password").getDecryptedValue());    	          	    
+     }
+    	
+    } catch(Exception e) {
+    	
+    }
+             
     String exchangeName = getProperty("exchangeName").getValueAsString();
     String exchangeType = getProperty("exchangeType").getValueAsString();
     String exchangeDurability = getProperty("exchangeDurability").getValueAsString();
@@ -141,6 +181,7 @@ public class RabbitMQInboundTransport extends InboundTransportBase implements Ru
     queue = new RabbitMQQueue(queueName, queueDurability, queueExclusive, queueAutoDelete);
 
     prefetchCount = Converter.convertToInteger(getProperty("prefetchCount").getValueAsString(), 1);
+    // why is super at the end not at the beginning?
     super.afterPropertiesSet();
   }
 

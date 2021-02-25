@@ -30,24 +30,34 @@ import com.esri.ges.framework.i18n.BundleLogger;
 import com.esri.ges.framework.i18n.BundleLoggerFactory;
 import com.esri.ges.util.Converter;
 
+enum RabbitMQAuthenticationType
+{
+  userpass, certificate
+}
+
 public class RabbitMQConnectionInfo implements Validatable
 {
-	private static final BundleLogger	LOGGER			= BundleLoggerFactory.getLogger(RabbitMQConnectionInfo.class);
-	private String										host				= "localhost";
-	private int												port				= 5672;
-	private String										virtualHost	= null;
-	private String										username		= null;
-	private String										password		= null;
-	private boolean										ssl					= true;
-
-	public RabbitMQConnectionInfo(String host, String port, String virtualHost, String username, String password, String ssl)
+	private static final BundleLogger LOGGER = BundleLoggerFactory.getLogger(RabbitMQConnectionInfo.class);
+	private String	host = "localhost";
+	private int 	port = 5672;
+	private String 	virtualHost = null;
+	
+	private RabbitMQAuthenticationType authenticationType = RabbitMQAuthenticationType.userpass;
+	private String 	username = null;
+	private String 	password = null;
+	private String clientCert;
+	private String clientCertPassword;
+	
+	private boolean ssl = true;
+	private boolean useProvidedServerCert = false;
+	private String 	serverCert = null;
+			
+	public RabbitMQConnectionInfo(String host, String port, String virtualHost, boolean ssl)
 	{
 		this.host = host;
 		this.port = Converter.convertToInteger(port, 5672);
-		this.virtualHost = virtualHost;
-		this.username = username;
-    this.password = password;
-		this.ssl = Converter.convertToBoolean(ssl, false);
+		this.virtualHost = virtualHost;	
+		this.ssl = ssl;
 	}
 
 	public String getHost()
@@ -64,10 +74,26 @@ public class RabbitMQConnectionInfo implements Validatable
 	{
 		return virtualHost;
 	}
+		
+	public RabbitMQAuthenticationType getAuthenticationType() {
+		return authenticationType;
+	}
+
+	public void setAuthenticationType(RabbitMQAuthenticationType authenticationType) {
+		this.authenticationType = authenticationType;
+	}	
+
+	public void setUsername(String username) {
+		this.username = username;
+	}
 
 	public String getUsername()
 	{
 		return username;
+	}
+
+	public void setPassword(String password) {
+		this.password = password;
 	}
 
 	public String getPassword()
@@ -75,9 +101,41 @@ public class RabbitMQConnectionInfo implements Validatable
 		return password;
 	}
 
+	public String getClientCert() {
+		return clientCert;
+	}
+	
+	public void setClientCert(String clientCert) {
+		this.clientCert = clientCert;
+	}
+	
+	public String getClientCertPassword() {
+		return clientCertPassword;
+	}
+	
+	public void setClientCertPassword(String clientCertPassword) {
+		this.clientCertPassword = clientCertPassword;
+	}
+	
 	public boolean isSsl()
 	{
 		return ssl;
+	}				
+		
+	public boolean isUseProvidedServerCert() {
+		return useProvidedServerCert;
+	}
+
+	public void setUseProvidedServerCert(boolean useProvidedServerCert) {
+		this.useProvidedServerCert = useProvidedServerCert;
+	}
+		
+	public String getServerCert() {
+		return serverCert;
+	}
+
+	public void setServerCert(String serverCert) {
+		this.serverCert = serverCert;
 	}
 
 	@Override

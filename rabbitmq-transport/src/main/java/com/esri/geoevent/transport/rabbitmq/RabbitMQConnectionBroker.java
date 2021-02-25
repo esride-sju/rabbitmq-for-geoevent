@@ -29,6 +29,7 @@ import com.esri.ges.framework.i18n.BundleLoggerFactory;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
+import com.rabbitmq.client.DefaultSaslConfig;
 import com.rabbitmq.client.ShutdownListener;
 import com.rabbitmq.client.ShutdownSignalException;
 
@@ -37,10 +38,32 @@ import net.jodah.lyra.Connections;
 import net.jodah.lyra.config.Config;
 import net.jodah.lyra.config.RecoveryPolicies;
 
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.Observable;
 import java.util.Observer;
 import java.util.concurrent.TimeoutException;
+
+import java.security.KeyManagementException;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.UnrecoverableKeyException;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
+
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
+
 
 public class RabbitMQConnectionBroker extends RabbitMQObservable implements Observer
 {
@@ -152,34 +175,128 @@ public class RabbitMQConnectionBroker extends RabbitMQObservable implements Obse
         {
           try
           {
-            ConnectionFactory factory = new ConnectionFactory();
+            ConnectionFactory factory = new ConnectionFactory(); // Create factory
             factory.setHost(connectionInfo.getHost());
-            factory.setPort(connectionInfo.getPort());
-            if (connectionInfo.getVirtualHost() != null)
-              factory.setVirtualHost(connectionInfo.getVirtualHost());
-            if (connectionInfo.isSsl())
-              factory.useSslProtocol();
-            if (connectionInfo.getUsername() != null && connectionInfo.getPassword() != null)
-            {
-              factory.setUsername(connectionInfo.getUsername());
-              factory.setPassword(connectionInfo.getPassword());
+	        factory.setPort(connectionInfo.getPort());
+	                    
+	        if (connectionInfo.getVirtualHost() != null) {
+	        	  factory.setVirtualHost(connectionInfo.getVirtualHost());
+	        }
+	        
+            TrustManager[] clientTrustManagerList = null;
+            
+            if (connectionInfo.isUseProvidedServerCert()) {             	 	            	            	
+        		/*
+        		 // TRUST ALL CERTIFICATES 
+  	              TrustManager[] clientTrustManagerListTemp = {
+  	  	            new X509TrustManager() {
+  	  	                @Override
+  	  	                public void checkClientTrusted(X509Certificate[] x509Certificates, String s) throws CertificateException {}
+  	  	                @Override
+  	  	                public void checkServerTrusted(X509Certificate[] x509Certificates, String s) throws CertificateException {}
+  	  	                @Override
+  	  	                public X509Certificate[] getAcceptedIssuers() { return null;}
+  	  	            }
+  	  	          };
+  	  	          clientTrustManagerList = clientTrustManagerListTemp;
+        		*/
+        		
+        		CertificateFactory cf = CertificateFactory.getInstance("X.509");  
+        		LOGGER.info("Read Client Cert: " + connectionInfo.getServerCert());
+	      		FileInputStream is = new FileInputStream(new File(connectionInfo.getServerCert()));		    	
+	          	InputStream caInput = new BufferedInputStream(is);
+	          	Certificate ca;
+	          	
+	      		try {
+	      			ca = cf.generateCertificate(caInput);
+	      			LOGGER.info("ca=" + ((X509Certificate) ca).getSubjectDN());
+	      		} finally {
+	      			caInput.close();
+	      		}
+
+	          	// Create a KeyStore containing our trusted CAs
+        		String keyStoreType = KeyStore.getDefaultType();
+        		KeyStore keyStore = KeyStore.getInstance(keyStoreType);
+        		keyStore.load(null, null);
+        		keyStore.setCertificateEntry("ca", ca);
+
+        		// Create a TrustManager that trusts the CAs in our KeyStore
+        		String tmfAlgorithm = TrustManagerFactory.getDefaultAlgorithm();
+        		TrustManagerFactory tmf = TrustManagerFactory.getInstance(tmfAlgorithm);
+        		tmf.init(keyStore);
+        				
+        		clientTrustManagerList = tmf.getTrustManagers();            
+            } 
+        	                    
+            KeyManager[] clientKeyManagerList = null;
+            
+            switch(connectionInfo.getAuthenticationType()) {                        
+            	case certificate:                                    	            
+                    try {
+                    	LOGGER.info("read certificat...: "+ connectionInfo.getClientCert());
+                    	FileInputStream clientCertificateInputStream = new FileInputStream(new File(connectionInfo.getClientCert()));
+                    	LOGGER.info("create clean keystore instance...");
+                        KeyStore clientKeStore = KeyStore.getInstance("PKCS12");
+                        LOGGER.info("load client certificate into keystore...");
+                        clientKeStore.load(clientCertificateInputStream, connectionInfo.getClientCertPassword().toCharArray());
+                        LOGGER.info("create KeyManagerFactory (SunX509)... ");
+                        KeyManagerFactory clientSSLKeyManagerFactory = KeyManagerFactory.getInstance("SunX509");
+                        LOGGER.info("initialize KeyManagerFactory... ");
+                        clientSSLKeyManagerFactory.init(clientKeStore, connectionInfo.getClientCertPassword().toCharArray());
+                        LOGGER.info("get list of key managers..."); // (in essence, only the keystore with the client certificate)
+                        clientKeyManagerList = clientSSLKeyManagerFactory.getKeyManagers();                             
+                    } catch(Exception e) {
+                    	LOGGER.error("Exception client certificate", e);
+                    }
+            		            		
+            		break;
+            	case userpass:
+            	default:
+      	          if (connectionInfo.getUsername() != null && connectionInfo.getPassword() != null)
+    	          {
+    	        	  factory.setUsername(connectionInfo.getUsername());
+    	        	  factory.setPassword(connectionInfo.getPassword());
+    	          }
             }
-            ConnectionOptions options = new ConnectionOptions().withConnectionFactory(factory);
-            Config config = new Config().withRecoveryPolicy(RecoveryPolicies.recoverAlways()).withChannelListeners(channelListener).withConnectionListeners(connectionListener).withConsumerListeners(consumerListener).withConsumerRecovery(true);
-            connection = Connections.create(options, config);
-            connection.addShutdownListener(new ShutdownListener()
-              {
-                @Override
-                public void shutdownCompleted(ShutdownSignalException cause)
-                {
-                  LOGGER.error("CONNECTION_BROKEN_WITH_CAUSE_ERROR", connectionInfo.getHost(), cause.getMessage());
-                  notifyObservers(RabbitMQConnectionStatus.DISCONNECTED, cause.getMessage());
-                }
-              });
-            errorState = false;
-            String msg = LOGGER.translate("CONNECTION_ESTABLISH_SUCCESS", connectionInfo.getHost());
-            LOGGER.info(msg);
-            notifyObservers(RabbitMQConnectionStatus.CREATED, msg);
+            
+            if (connectionInfo.isSsl()) {
+            	
+            	// TODO Kann SSL Context gesetzt werden wenn nur isSSL aktiv ist aber weder Server noch Client Zert?
+            	if (connectionInfo.isUseProvidedServerCert()) {
+            		// TLS Version konfigurierbar machen? 1.2 oder 1.3?        	  
+                	SSLContext sslContext = SSLContext.getInstance("TLSv1.2"); 
+            		
+                	LOGGER.info("initialize ssl context");
+                    //Initialize SSL context with the key and trust managers we've created/loaded before
+                	sslContext.init(clientKeyManagerList, clientTrustManagerList, null);
+                	
+
+                	LOGGER.info("set Sasl Config to EXTERNAL");
+      	          	factory.setSaslConfig(DefaultSaslConfig.EXTERNAL);  //Set authentication method as SSL auth
+      	          
+      	          	LOGGER.info("use ssl context as SSLProtocol");
+      	          	factory.useSslProtocol(sslContext);   //Set the created SSL context as the one to use            		
+            	} else {
+            		factory.useSslProtocol();	
+            	}
+        	}
+               	                    
+	          ConnectionOptions options = new ConnectionOptions().withConnectionFactory(factory);
+	          Config config = new Config().withRecoveryPolicy(RecoveryPolicies.recoverAlways()).withChannelListeners(channelListener).withConnectionListeners(connectionListener).withConsumerListeners(consumerListener).withConsumerRecovery(true);
+	          connection = Connections.create(options, config);
+	          connection.addShutdownListener(new ShutdownListener()
+	          {
+	            @Override
+	            public void shutdownCompleted(ShutdownSignalException cause)
+	            {
+	              LOGGER.error("CONNECTION_BROKEN_WITH_CAUSE_ERROR", connectionInfo.getHost(), cause.getMessage());
+	              notifyObservers(RabbitMQConnectionStatus.DISCONNECTED, cause.getMessage());
+	            }
+	          });
+	          errorState = false;
+	          String msg = LOGGER.translate("CONNECTION_ESTABLISH_SUCCESS", connectionInfo.getHost());
+	          LOGGER.info(msg);
+	          notifyObservers(RabbitMQConnectionStatus.CREATED, msg);	        
           }
           catch (Throwable th)
           {

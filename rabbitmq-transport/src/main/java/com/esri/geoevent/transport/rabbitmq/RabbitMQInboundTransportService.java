@@ -27,6 +27,7 @@ package com.esri.geoevent.transport.rabbitmq;
 import com.esri.ges.core.component.ComponentException;
 import com.esri.ges.framework.i18n.BundleLogger;
 import com.esri.ges.framework.i18n.BundleLoggerFactory;
+import com.esri.ges.manager.datastore.folder.FolderDataStoreManager;
 import com.esri.ges.transport.Transport;
 import com.esri.ges.transport.TransportServiceBase;
 
@@ -34,6 +35,8 @@ public class RabbitMQInboundTransportService extends TransportServiceBase
 {
   private static final BundleLogger LOGGER = BundleLoggerFactory.getLogger(RabbitMQInboundTransport.class);
 
+  protected FolderDataStoreManager folderSourceManager;
+  
   public RabbitMQInboundTransportService()
   {
     definition = new RabbitMQInboundTransportDefinition();
@@ -43,6 +46,10 @@ public class RabbitMQInboundTransportService extends TransportServiceBase
   @Override
   public Transport createTransport() throws ComponentException
   {
-    return new RabbitMQInboundTransport(definition);
+    return new RabbitMQInboundTransport(definition, folderSourceManager);
+  }
+    
+  public void setFolderSourceManager(FolderDataStoreManager folderSourceManager) {
+    this.folderSourceManager = folderSourceManager;
   }
 }
