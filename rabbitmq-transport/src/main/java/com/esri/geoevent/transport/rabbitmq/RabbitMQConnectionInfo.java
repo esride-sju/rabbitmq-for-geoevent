@@ -24,6 +24,10 @@
 
 package com.esri.geoevent.transport.rabbitmq;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+
 import com.esri.ges.core.validation.Validatable;
 import com.esri.ges.core.validation.ValidationException;
 import com.esri.ges.framework.i18n.BundleLogger;
@@ -145,5 +149,32 @@ public class RabbitMQConnectionInfo implements Validatable
 			throw new ValidationException(LOGGER.translate("CONNECTION_HOST_VALIDATE_ERROR"));
 		if (port <= 0)
 			throw new ValidationException(LOGGER.translate("CONNECTION_PORT_VALIDATE_ERROR"));
+		
+		if (RabbitMQAuthenticationType.certificate == authenticationType) {
+						
+			if (null == clientCert || clientCert.isEmpty() ) {
+				throw new ValidationException(LOGGER.translate("AUTH_CLIENT_CERT_VALIDATE_ERROR"));			
+			}
+			
+			if (null == clientCertPassword || clientCertPassword.isEmpty()) {
+				throw new ValidationException(LOGGER.translate("AUTH_CLIENT_CERT_PASS_VALIDATE_ERROR"));
+				
+			}
+			
+			try {
+				new FileInputStream(new File(clientCert));
+			} catch (FileNotFoundException e) {
+				throw new ValidationException(LOGGER.translate("AUTH_CLIENT_CERT_READ_VALIDATE_ERROR", e.getMessage()));				
+			}	
+		}
+				
+		if(useProvidedServerCert) {
+			try {
+				new FileInputStream(new File(serverCert));
+			} catch (FileNotFoundException e) {
+				throw new ValidationException(LOGGER.translate("SERVER_CERT_READ_VALIDATE_ERROR", e.getMessage()));				
+			}
+		}
+		
 	}
 }
